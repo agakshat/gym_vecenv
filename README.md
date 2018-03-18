@@ -11,7 +11,10 @@ Requirements (resolved automatically during installation):
 3. `Cloudpickle`
 4. `numpy`
 
-Installation:
+Installation: Easiest way is to do `pip3 install gym_vecenv`
+
+If you want to build from source,
+
 1. Clone this repository
 2. `cd gym_vecenv`
 3. `pip install -e .`
