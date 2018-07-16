@@ -23,6 +23,11 @@ def worker(remote, parent_remote, env_fn_wrapper):
             break
         elif cmd == 'get_spaces':
             remote.send((env.observation_space, env.action_space))
+        elif cmd == 'act':
+            if 'act' not in dir(env):
+                raise NotImplementedError
+            actions = env.act(data)
+            remote.send(actions)
         else:
             raise NotImplementedError
 
@@ -80,3 +85,17 @@ class SubprocVecEnv(VecEnv):
         for p in self.ps:
             p.join()
         self.closed = True
+
+    def act_async(self, observations):
+        for remote, obs in zip(self.remotes, observations):
+            remote.send(('act', obs))
+        self.waiting = True
+
+    def act_wait(self):
+        results = [remote.recv() for remote in self.remotes]
+        self.waiting = False
+        return results
+        
+    def act(self, observations):
+        self.act_async(observations)
+        return self.act_wait()    
