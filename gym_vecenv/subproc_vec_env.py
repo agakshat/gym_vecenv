@@ -23,6 +23,9 @@ def worker(remote, parent_remote, env_fn_wrapper):
             break
         elif cmd == 'get_spaces':
             remote.send((env.observation_space, env.action_space))
+        elif cmd == 'get_num_agents':
+            num_agents = env.num_agents if hasattr(env, 'num_agents') else None
+            remote.send(num_agents)
         else:
             raise NotImplementedError
 
@@ -47,6 +50,17 @@ class SubprocVecEnv(VecEnv):
         self.remotes[0].send(('get_spaces', None))
         observation_space, action_space = self.remotes[0].recv()
         VecEnv.__init__(self, len(env_fns), observation_space, action_space)
+        self._num_agents = [None]*nenvs
+    
+    @property
+    def num_agents(self):
+        return self._num_agents
+        
+    def _update_num_agents(self):
+        # will be called only after env is reset
+        for i, remote in enumerate(self.remotes):
+            remote.send(('get_num_agents', None))
+            self._num_agents[i] = remote.recv()
 
     def step_async(self, actions):
         for remote, action in zip(self.remotes, actions):
@@ -62,7 +76,9 @@ class SubprocVecEnv(VecEnv):
     def reset(self):
         for remote in self.remotes:
             remote.send(('reset', None))
-        return np.stack([remote.recv() for remote in self.remotes])
+        ret = np.stack([remote.recv() for remote in self.remotes])
+        self._update_num_agents()
+        return ret
 
     def reset_task(self):
         for remote in self.remotes:
