@@ -2,15 +2,17 @@ import numpy as np
 from multiprocessing import Process, Pipe
 from .vec_env import VecEnv, CloudpickleWrapper
 
-def worker(remote, parent_remote, env_fn_wrapper):
+def worker(remote, parent_remote, env_fn_wrapper, no_reset=False):
     parent_remote.close()
     env = env_fn_wrapper.x()
     while True:
         cmd, data = remote.recv()
         if cmd == 'step':
             ob, reward, done, info = env.step(data)
-            if np.any(done):
-                ob = env.reset()
+            # do not reset env
+            if not no_reset:
+                if np.any(done):
+                    ob = env.reset()
             remote.send((ob, reward, done, info))
         elif cmd == 'reset':
             ob = env.reset()
@@ -31,7 +33,7 @@ def worker(remote, parent_remote, env_fn_wrapper):
 
 
 class SubprocVecEnv(VecEnv):
-    def __init__(self, env_fns, spaces=None):
+    def __init__(self, env_fns, spaces=None, no_reset=False):
         """
         envs: list of gym environments to run in subprocesses
         """
@@ -39,7 +41,7 @@ class SubprocVecEnv(VecEnv):
         self.closed = False
         nenvs = len(env_fns)
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
-        self.ps = [Process(target=worker, args=(work_remote, remote, CloudpickleWrapper(env_fn)))
+        self.ps = [Process(target=worker, args=(work_remote, remote, CloudpickleWrapper(env_fn), no_reset))
             for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)]
         for p in self.ps:
             p.daemon = True # if the main process crashes, we should not cause things to hang
@@ -52,15 +54,15 @@ class SubprocVecEnv(VecEnv):
         VecEnv.__init__(self, len(env_fns), observation_space, action_space)
         self._num_agents = [None]*nenvs
     
-    @property
-    def num_agents(self):
-        return self._num_agents
+    # @property
+    # def num_agents(self):
+    #     return self._num_agents
         
-    def _update_num_agents(self):
-        # will be called only after env is reset
-        for i, remote in enumerate(self.remotes):
-            remote.send(('get_num_agents', None))
-            self._num_agents[i] = remote.recv()
+    # def _update_num_agents(self):
+    #     # will be called only after env is reset
+    #     for i, remote in enumerate(self.remotes):
+    #         remote.send(('get_num_agents', None))
+    #         self._num_agents[i] = remote.recv()
 
     def step_async(self, actions):
         for remote, action in zip(self.remotes, actions):
@@ -77,7 +79,7 @@ class SubprocVecEnv(VecEnv):
         for remote in self.remotes:
             remote.send(('reset', None))
         ret = np.stack([remote.recv() for remote in self.remotes])
-        self._update_num_agents()
+        # self._update_num_agents()
         return ret
 
     def reset_task(self):
