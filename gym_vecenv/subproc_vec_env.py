@@ -26,6 +26,9 @@ def worker(remote, parent_remote, env_fn_wrapper):
         elif cmd == 'get_num_agents':
             num_agents = env.num_agents if hasattr(env, 'num_agents') else None
             remote.send(num_agents)
+        elif cmd == 'get_available_actions':
+            avlact = env.get_avail_actions()
+            remote.send(avlact)
         else:
             raise NotImplementedError
 
@@ -96,3 +99,8 @@ class SubprocVecEnv(VecEnv):
         for p in self.ps:
             p.join()
         self.closed = True
+
+    def get_available_actions(self):
+        for i, remote in enumerate(self.remotes):
+            remote.send(('get_available_actions',None))
+        return np.stack([remote.recv() for remote in self.remotes])
